@@ -290,6 +290,35 @@ static void aes_serial_batch_encrypt(const uint8_t *data, size_t data_len) {
 }
 
 /**
+ * batch like above but with trigger for each AES iteration
+ * because WaveRunner batch / segmented capture needs this.
+ */
+static void aes_serial_batch_waverunner_encrypt(const uint8_t *data, size_t data_len) {
+  uint32_t num_encryptions = 0;
+  SS_CHECK(data_len == sizeof(num_encryptions));
+  num_encryptions = read_32(data);
+
+  block_ctr += num_encryptions;
+  // Rewrite the key to reset the internal block counter. Otherwise, the AES
+  // peripheral might trigger the reseeding of the internal masking PRNG which
+  // disturbs SCA measurements.
+  if (block_ctr > kBlockCtrMax) {
+    aes_key_mask_and_config(key_fixed, kAesKeyLength);
+    block_ctr = num_encryptions;
+  }
+
+  for (uint32_t i = 0; i < num_encryptions; ++i) {
+    uint8_t plaintext[kAesTextLength];
+    prng_rand_bytes(plaintext, kAesTextLength);
+    sca_set_trigger_high();
+    aes_encrypt(plaintext, kAesTextLength);
+    sca_set_trigger_low();
+  }
+
+  aes_send_ciphertext(true);
+}
+
+/**
  * Simple serial 't' (fvsr key set) command handler.
  *
  * This command is designed to set the fixed key which is used for fvsr key TVLA
@@ -448,6 +477,7 @@ bool test_main(void) {
   simple_serial_register_handler('g', aes_serial_fvsr_key_batch_generate);
   simple_serial_register_handler('f', aes_serial_fvsr_key_batch_encrypt);
   simple_serial_register_handler('l', aes_serial_seed_lfsr);
+  simple_serial_register_handler('w', aes_serial_batch_waverunner_encrypt);
 
   LOG_INFO("Initializing AES unit.");
   init_aes();
