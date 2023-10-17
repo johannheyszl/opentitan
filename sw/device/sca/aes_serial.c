@@ -102,7 +102,8 @@ dif_aes_transaction_t transaction = {
     .key_provider = kDifAesKeySoftwareProvided,
     .mask_reseeding = kDifAesReseedPer8kBlock,
     .reseed_on_key_change = false,
-    .force_masks = false,
+//    .force_masks = false,
+    .force_masks = true,
     .ctrl_aux_lock = false,
 };
 
@@ -440,12 +441,21 @@ static void aes_serial_fvsr_key_batch_encrypt(const uint8_t *data,
  * Simple serial 'l' (seed lfsr) command handler.
  *
  * This function only supports 4-byte seeds.
+ * Enables/disables masking depending on seed value, i.e. 0 for disable.
  *
  * @param seed A buffer holding the seed.
  */
 static void aes_serial_seed_lfsr(const uint8_t *seed, size_t seed_len) {
   SS_CHECK(seed_len == sizeof(uint32_t));
-  sca_seed_lfsr(read_32(seed));
+  uint32_t seed_local = read_32(seed);
+  if (seed_local == 0) {
+    //disable masking
+    transaction.force_masks = true;
+  } else {
+    //enable masking
+    transaction.force_masks = false;
+  }
+  sca_seed_lfsr(seed_local);
 }
 
 /**
